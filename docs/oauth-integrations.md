@@ -85,10 +85,22 @@ for a duplicate id are skipped with a `WARN` log.
 - **Per-tenant rate limit** on `POST /oauth/connect/:providerId` is 50
   requests per 5 minutes (state-row flood guard). This is in addition to
   the existing per-user limit.
-- **Refresh worker leader-election** uses Postgres advisory locks — works
-  correctly under postgres-js when the worker holds a single connection
-  for the duration of a tick. Multi-process deployments coordinate
-  naturally through the shared lock.
-- **`mark-revoked` middleware** for run-JWT verification is not yet wired
-  in `app.ts` — the route returns 401 without `req.runJwt` until the
-  middleware lands.
+- **Refresh worker leader-election** uses
+  `pg_try_advisory_xact_lock` inside a single transaction so the lock is
+  released automatically at COMMIT/ROLLBACK regardless of which pool
+  connection the underlying postgres-js client picked up. Multi-process
+  deployments coordinate naturally through the shared lock.
+- **`mark-revoked` middleware** is wired in `app.ts` and reads a Bearer
+  run-JWT via `verifyLocalAgentJwt`. The endpoint returns 401 without a
+  valid JWT carrying an `oauth.connectionIds` claim, 403 when the claim
+  doesn't include the requested connection, 204 on success.
+- **GitHub upstream revocation is best-effort.** GitHub's
+  `/applications/{client_id}/grant` endpoint requires `DELETE` and a
+  JSON body (`{"access_token": "..."}`), not RFC-7009's
+  `POST` + form-encoded shape that `revokeUpstreamToken` uses. The
+  upstream revoke call therefore always fails for GitHub — the local
+  disconnect cleanup path swallows the error and proceeds, so the
+  user's local state ends up correct, but the GitHub grant remains
+  valid until natural expiry or until the user revokes it via the
+  GitHub UI. A follow-up PR will add a per-provider `revokeStyle`
+  field to handle non-RFC-7009 providers.
