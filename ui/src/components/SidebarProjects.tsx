@@ -41,6 +41,7 @@ const PROJECT_SORT_CHOICES: SidebarSectionRadioChoice[] = [
   { value: "alphabetical", label: "Alphabetical" },
   { value: "recent", label: "Recent" },
 ];
+const REORDER_POINTER_MEDIA = "(hover: hover) and (pointer: fine)";
 
 type ProjectItemProps = {
   activeProjectRef: string | null;
@@ -72,6 +73,26 @@ function sortProjects(projects: Project[], sortMode: ProjectSidebarSortMode): Pr
     return timeDiff !== 0 ? timeDiff : left.name.localeCompare(right.name, undefined, { sensitivity: "base" });
   });
   return sorted;
+}
+
+function hasFineReorderPointer() {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return true;
+  return window.matchMedia(REORDER_POINTER_MEDIA).matches;
+}
+
+function useFineReorderPointer() {
+  const [matches, setMatches] = useState(hasFineReorderPointer);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const query = window.matchMedia(REORDER_POINTER_MEDIA);
+    const onChange = (event: MediaQueryListEvent) => setMatches(event.matches);
+    setMatches(query.matches);
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
+
+  return matches;
 }
 
 function ProjectItem({
@@ -167,6 +188,7 @@ export function SidebarProjects() {
   const { selectedCompany, selectedCompanyId } = useCompany();
   const { openNewProject } = useDialogActions();
   const { isMobile, setSidebarOpen } = useSidebar();
+  const fineReorderPointer = useFineReorderPointer();
   const location = useLocation();
 
   const { data: projects } = useQuery({
@@ -209,6 +231,7 @@ export function SidebarProjects() {
     [orderedProjects, sortMode],
   );
   const isTopMode = sortMode === "top";
+  const canReorderProjects = isTopMode && !isMobile && fineReorderPointer;
 
   const projectMatch = location.pathname.match(/^\/(?:[^/]+\/)?projects\/([^/]+)/);
   const activeProjectRef = projectMatch?.[1] ?? null;
@@ -310,7 +333,7 @@ export function SidebarProjects() {
         onRadioValueChange: persistSortMode,
       }}
     >
-      {isTopMode ? (
+      {canReorderProjects ? (
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
