@@ -289,6 +289,38 @@ describe("Inbox toolbar", () => {
       root.unmount();
     });
   });
+
+  it("hides workspace grouping when isolated workspaces are disabled", async () => {
+    routerMock.location.pathname = "/inbox/mine";
+    apiMocks.experimentalSettings.mockResolvedValue({ enableIsolatedWorkspaces: false });
+
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: 0, gcTime: 0 } },
+    });
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <Inbox />
+        </QueryClientProvider>,
+      );
+    });
+
+    const groupButton = container.querySelector<HTMLButtonElement>('button[title="Group"]');
+    expect(groupButton).not.toBeNull();
+
+    await act(async () => {
+      groupButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const groupOptions = Array.from(document.body.querySelectorAll("button")).map((button) => button.textContent);
+    expect(groupOptions).not.toContain("Workspace");
+
+    act(() => {
+      root.unmount();
+    });
+  });
 });
 
 describe("FailedRunInboxRow", () => {
