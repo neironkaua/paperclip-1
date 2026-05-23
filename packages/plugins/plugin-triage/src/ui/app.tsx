@@ -562,6 +562,7 @@ export function TriageRouteSidebar({ context }: PluginRouteSidebarProps) {
         padding: 12,
         display: "grid",
         gap: 14,
+        alignContent: "start",
         color: tokens.fg,
         background: tokens.bg,
         fontFamily: fontStack,
@@ -1071,7 +1072,7 @@ function ItemWorkbenchPage({ companyId, queueKey, itemId }: { companyId: string;
         ) : null}
       </div>
 
-      {itemQuery.loading || !itemQuery.data ? (
+      {!itemQuery.data ? (
         <div style={mutedStyle}>Loading item…</div>
       ) : (
         <WorkbenchTwoColumn
@@ -1109,13 +1110,13 @@ function TransitionBar({
   const [error, setError] = useState<string | null>(null);
   const transitions = allowedTransitions(item.stateKey);
 
-  async function handleTransition(toStateKey: string, label: string) {
+  async function handleTransition(toStateKey: string) {
     setError(null);
     setBusy(toStateKey);
     try {
       await transition({ companyId, itemId: item.id, toStateKey });
       onChanged();
-      toast({ title: `Item moved to ${label}`, tone: "success" });
+      toast({ title: `Item moved to ${stateLabel(toStateKey)}`, tone: "success" });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to transition item");
     } finally {
@@ -1151,7 +1152,7 @@ function TransitionBar({
               key={t.toStateKey}
               variant={isPrimary ? "primary" : "outline"}
               disabled={busy !== null}
-              onClick={() => void handleTransition(t.toStateKey, t.label)}
+              onClick={() => void handleTransition(t.toStateKey)}
             >
               {busy === t.toStateKey ? `${t.label}…` : t.label}
             </Button>
