@@ -344,12 +344,18 @@ function toExecutionWorkspace(
   };
 }
 
-function toExecutionWorkspaceSummary(row: Pick<ExecutionWorkspaceRow, "id" | "name" | "mode" | "projectWorkspaceId">): ExecutionWorkspaceSummary {
+function toExecutionWorkspaceSummary(
+  row: Pick<ExecutionWorkspaceRow, "id" | "name" | "mode" | "status" | "cwd" | "branchName" | "projectWorkspaceId" | "lastUsedAt">,
+): ExecutionWorkspaceSummary {
   return {
     id: row.id,
     name: row.name,
     mode: row.mode as ExecutionWorkspaceSummary["mode"],
+    status: row.status as ExecutionWorkspaceSummary["status"],
+    cwd: row.cwd ?? null,
+    branchName: row.branchName ?? null,
     projectWorkspaceId: row.projectWorkspaceId ?? null,
+    lastUsedAt: row.lastUsedAt,
   };
 }
 
@@ -452,7 +458,11 @@ export function executionWorkspaceService(db: Db) {
           id: executionWorkspaces.id,
           name: executionWorkspaces.name,
           mode: executionWorkspaces.mode,
+          status: executionWorkspaces.status,
+          cwd: executionWorkspaces.cwd,
+          branchName: executionWorkspaces.branchName,
           projectWorkspaceId: executionWorkspaces.projectWorkspaceId,
+          lastUsedAt: executionWorkspaces.lastUsedAt,
         })
         .from(executionWorkspaces)
         .where(and(...conditions))
