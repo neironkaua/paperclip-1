@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { sql } from "drizzle-orm";
 import {
@@ -3705,6 +3705,94 @@ describeEmbeddedPostgres("accepted plan decomposition", () => {
     expect(childrenRows).toHaveLength(2);
     expect(childrenRows.some((row) => row.id === firstChildId)).toBe(true);
     expect(childrenRows.map((row) => row.title).sort()).toEqual(children.map((child) => child.title).sort());
+  });
+
+  it("resumes a partial decomposition after reassignment when only actor metadata changes", async () => {
+    const { companyId, sourceIssueId, acceptedPlanRevisionId, assigneeAgentId } = await seedAcceptedPlanIssue();
+    const reassignedAgentId = randomUUID();
+    await db.insert(agents).values({
+      id: reassignedAgentId,
+      companyId,
+      name: "SecondCoder",
+      role: "engineer",
+      status: "active",
+      adapterType: "codex_local",
+      adapterConfig: {},
+      runtimeConfig: {},
+      permissions: {},
+    });
+
+    const children = [
+      {
+        title: "Keep the original child",
+        status: "todo" as const,
+        workMode: "standard" as const,
+        priority: "medium" as const,
+        createdByAgentId: assigneeAgentId,
+        actorAgentId: assigneeAgentId,
+      },
+      {
+        title: "Create only the missing child after reassignment",
+        status: "todo" as const,
+        workMode: "standard" as const,
+        priority: "medium" as const,
+        createdByAgentId: assigneeAgentId,
+        actorAgentId: assigneeAgentId,
+      },
+    ];
+
+    const initial = await svc.decomposeAcceptedPlan(sourceIssueId, {
+      acceptedPlanRevisionId,
+      children,
+      actorAgentId: assigneeAgentId,
+    });
+    const claim = await getAcceptedPlanClaim(sourceIssueId);
+    const [firstChildId, secondChildId] = initial.childIssueIds;
+
+    expect(claim).not.toBeNull();
+    expect(firstChildId).toBeTruthy();
+    expect(secondChildId).toBeTruthy();
+
+    await db.delete(issues).where(eq(issues.id, secondChildId!));
+    await db
+      .update(issues)
+      .set({ assigneeAgentId: reassignedAgentId, updatedAt: new Date() })
+      .where(eq(issues.id, sourceIssueId));
+    await db
+      .update(issuePlanDecompositions)
+      .set({
+        status: "in_flight",
+        childIssueIds: [firstChildId!],
+        completedAt: null,
+        ownerAgentId: assigneeAgentId,
+        updatedAt: new Date(),
+      })
+      .where(eq(issuePlanDecompositions.id, claim!.id));
+
+    const retried = await svc.decomposeAcceptedPlan(sourceIssueId, {
+      acceptedPlanRevisionId,
+      children: children.map((child) => ({
+        ...child,
+        createdByAgentId: reassignedAgentId,
+        actorAgentId: reassignedAgentId,
+      })),
+      actorAgentId: reassignedAgentId,
+    });
+
+    expect(retried.decomposition.status).toBe("completed");
+    expect(retried.decomposition.ownerAgentId).toBe(reassignedAgentId);
+    expect(retried.childIssueIds[0]).toBe(firstChildId);
+    expect(retried.newlyCreatedIssues).toHaveLength(1);
+    expect(retried.newlyCreatedIssues[0]?.title).toBe("Create only the missing child after reassignment");
+
+    const childrenRows = await db
+      .select({ id: issues.id, title: issues.title, createdByAgentId: issues.createdByAgentId })
+      .from(issues)
+      .where(eq(issues.parentId, sourceIssueId))
+      .orderBy(asc(issues.createdAt), asc(issues.id));
+    expect(childrenRows).toHaveLength(2);
+    expect(childrenRows.map((row) => row.id).sort()).toEqual([...retried.childIssueIds].sort());
+    expect(childrenRows.find((row) => row.id !== firstChildId)?.createdByAgentId).toBe(reassignedAgentId);
   });
 
   it("lists persisted decompositions with child issue summaries", async () => {

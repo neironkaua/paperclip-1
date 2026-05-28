@@ -438,11 +438,42 @@ function normalizeAcceptedPlanDecompositionFingerprintValue(value: unknown): unk
   return String(value);
 }
 
+const ACCEPTED_PLAN_DECOMPOSITION_FINGERPRINT_CHILD_METADATA_KEYS = new Set([
+  "id",
+  "companyId",
+  "parentId",
+  "identifier",
+  "checkoutRunId",
+  "executionRunId",
+  "executionLockedAt",
+  "startedAt",
+  "completedAt",
+  "cancelledAt",
+  "hiddenAt",
+  "createdAt",
+  "updatedAt",
+  "createdByAgentId",
+  "createdByUserId",
+  "updatedByAgentId",
+  "updatedByUserId",
+  "actorAgentId",
+  "actorUserId",
+]);
+
+function normalizeAcceptedPlanDecompositionFingerprintChild(child: IssueChildCreateInput) {
+  return Object.fromEntries(
+    Object.entries(child).filter(([key]) => !ACCEPTED_PLAN_DECOMPOSITION_FINGERPRINT_CHILD_METADATA_KEYS.has(key)),
+  );
+}
+
 function createAcceptedPlanDecompositionRequestFingerprint(input: {
   acceptedPlanRevisionId: string;
   children: IssueChildCreateInput[];
 }) {
-  const canonical = JSON.stringify(normalizeAcceptedPlanDecompositionFingerprintValue(input));
+  const canonical = JSON.stringify(normalizeAcceptedPlanDecompositionFingerprintValue({
+    acceptedPlanRevisionId: input.acceptedPlanRevisionId,
+    children: input.children.map(normalizeAcceptedPlanDecompositionFingerprintChild),
+  }));
   return createHash("sha256").update(canonical).digest("hex");
 }
 
