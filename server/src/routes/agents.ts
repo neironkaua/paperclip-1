@@ -76,7 +76,7 @@ import {
   refreshAdapterModels,
   requireServerAdapter,
 } from "../adapters/index.js";
-import { redactEventPayload } from "../redaction.js";
+import { redactAdapterConfig, redactEventPayload } from "../redaction.js";
 import { redactCurrentUserValue } from "../log-redaction.js";
 import { renderOrgChartSvg, renderOrgChartPng, type OrgNode, type OrgChartStyle, ORG_CHART_STYLES } from "./org-chart-svg.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
@@ -567,8 +567,15 @@ export function agentRoutes(
       buildAgentAccessState(agent),
     ]);
 
+    const base = options?.restricted
+      ? redactForRestrictedAgentView(agent)
+      : {
+          ...agent,
+          adapterConfig: redactAdapterConfig(agent.adapterConfig as Record<string, unknown> | null),
+          runtimeConfig: redactAdapterConfig(agent.runtimeConfig as Record<string, unknown> | null),
+        };
     return {
-      ...(options?.restricted ? redactForRestrictedAgentView(agent) : agent),
+      ...base,
       chainOfCommand,
       access: accessState,
     };
@@ -1454,8 +1461,8 @@ export function agentRoutes(
       status: agent.status,
       reportsTo: agent.reportsTo,
       adapterType: agent.adapterType,
-      adapterConfig: redactEventPayload(agent.adapterConfig),
-      runtimeConfig: redactEventPayload(agent.runtimeConfig),
+      adapterConfig: redactAdapterConfig(agent.adapterConfig as Record<string, unknown> | null),
+      runtimeConfig: redactAdapterConfig(agent.runtimeConfig as Record<string, unknown> | null),
       permissions: agent.permissions,
       updatedAt: agent.updatedAt,
     };
@@ -1466,12 +1473,12 @@ export function agentRoutes(
     const record = snapshot as Record<string, unknown>;
     return {
       ...record,
-      adapterConfig: redactEventPayload(
+      adapterConfig: redactAdapterConfig(
         typeof record.adapterConfig === "object" && record.adapterConfig !== null
           ? (record.adapterConfig as Record<string, unknown>)
           : {},
       ),
-      runtimeConfig: redactEventPayload(
+      runtimeConfig: redactAdapterConfig(
         typeof record.runtimeConfig === "object" && record.runtimeConfig !== null
           ? (record.runtimeConfig as Record<string, unknown>)
           : {},
