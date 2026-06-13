@@ -15,6 +15,7 @@ const KNOWN_TOKENS: { name: string; re: RegExp }[] = [
   { name: "github_pat_classic", re: /ghp_[A-Za-z0-9]{36}/ },
   { name: "github_pat_fine", re: /github_pat_[A-Za-z0-9_]{22,}/ },
   { name: "anthropic", re: /sk-ant-[a-zA-Z0-9_-]{95}/ },
+  { name: "openai_project", re: /sk-(?:proj|svcacct|admin)-[A-Za-z0-9_-]{20,}/ },
   { name: "openai", re: /sk-[a-zA-Z0-9]{48}/ },
   { name: "aws_akia", re: /AKIA[A-Z0-9]{16}/ },
   { name: "slack", re: /xox[baprs]-[A-Za-z0-9-]{10,}/ },
