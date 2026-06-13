@@ -3234,14 +3234,14 @@ export function issueService(db: Db) {
         offset = chunk.nextOffset ?? 0;
       }
     } catch (err) {
-      if (err instanceof HttpError && err.status === 404) {
-        logger.warn(
-          { err, runId: run.runId ?? undefined, logRef: run.logRef },
-          "missing heartbeat run log while deriving issue comment metadata",
-        );
-        return content;
-      }
-      throw err;
+      // Run-log derivation is best-effort metadata enrichment. A missing,
+      // rotated, or unreadable log (404, ENOENT, store errors) must never break
+      // the comments read path — degrade to whatever we read so far.
+      logger.warn(
+        { err, runId: run.runId ?? undefined, logRef: run.logRef },
+        "failed reading heartbeat run log while deriving issue comment metadata",
+      );
+      return content;
     }
 
     return content;
@@ -3286,56 +3286,61 @@ export function issueService(db: Db) {
       maxCommentCreatedAtMs + ISSUE_COMMENT_RUN_LOG_DERIVATION_END_SLACK_MS,
     ).toISOString();
 
-    const runs = await db
-      .select({
-        runId: heartbeatRuns.id,
-        agentId: heartbeatRuns.agentId,
-        createdAt: heartbeatRuns.createdAt,
-        startedAt: heartbeatRuns.startedAt,
-        finishedAt: heartbeatRuns.finishedAt,
-        logStore: heartbeatRuns.logStore,
-        logRef: heartbeatRuns.logRef,
-        logBytes: heartbeatRuns.logBytes,
-      })
-      .from(heartbeatRuns)
-      .where(
-        and(
-          eq(heartbeatRuns.companyId, companyId),
-          or(
-            sql`${heartbeatRuns.contextSnapshot} ->> 'issueId' = ${issueId}`,
-            sql`exists (
-              select 1
-              from ${activityLog}
-              where ${activityLog.companyId} = ${companyId}
-                and ${activityLog.entityType} = 'issue'
-                and ${activityLog.entityId} = ${issueId}
-                and ${activityLog.runId} = ${heartbeatRuns.id}
-            )`,
+    try {
+      const runs = await db
+        .select({
+          runId: heartbeatRuns.id,
+          agentId: heartbeatRuns.agentId,
+          createdAt: heartbeatRuns.createdAt,
+          startedAt: heartbeatRuns.startedAt,
+          finishedAt: heartbeatRuns.finishedAt,
+          logStore: heartbeatRuns.logStore,
+          logRef: heartbeatRuns.logRef,
+          logBytes: heartbeatRuns.logBytes,
+        })
+        .from(heartbeatRuns)
+        .where(
+          and(
+            eq(heartbeatRuns.companyId, companyId),
+            or(
+              sql`${heartbeatRuns.contextSnapshot} ->> 'issueId' = ${issueId}`,
+              sql`exists (
+                select 1
+                from ${activityLog}
+                where ${activityLog.companyId} = ${companyId}
+                  and ${activityLog.entityType} = 'issue'
+                  and ${activityLog.entityId} = ${issueId}
+                  and ${activityLog.runId} = ${heartbeatRuns.id}
+              )`,
+            ),
+            sql`coalesce(${heartbeatRuns.finishedAt}, ${heartbeatRuns.createdAt}) >= ${minCommentCreatedAt}::timestamptz`,
+            sql`coalesce(${heartbeatRuns.startedAt}, ${heartbeatRuns.createdAt}) <= ${maxCommentCreatedAt}::timestamptz`,
           ),
-          sql`coalesce(${heartbeatRuns.finishedAt}, ${heartbeatRuns.createdAt}) >= ${minCommentCreatedAt}::timestamptz`,
-          sql`coalesce(${heartbeatRuns.startedAt}, ${heartbeatRuns.createdAt}) <= ${maxCommentCreatedAt}::timestamptz`,
-        ),
-      )
-      .orderBy(desc(heartbeatRuns.createdAt));
+        )
+        .orderBy(desc(heartbeatRuns.createdAt));
 
-    if (runs.length === 0) return comments;
+      if (runs.length === 0) return comments;
 
-    const runsWithLogs: Array<(typeof runs)[number] & { logContent: string }> = [];
-    for (let index = 0; index < runs.length; index += ISSUE_COMMENT_RUN_LOG_DERIVATION_MAX_PARALLEL_READS) {
-      const batch = runs.slice(index, index + ISSUE_COMMENT_RUN_LOG_DERIVATION_MAX_PARALLEL_READS);
-      const batchWithLogs = await Promise.all(batch.map(async (run) => ({
-        ...run,
-        logContent: await readRunLogText(run),
-      })));
-      runsWithLogs.push(...batchWithLogs);
+      const runsWithLogs: Array<(typeof runs)[number] & { logContent: string }> = [];
+      for (let index = 0; index < runs.length; index += ISSUE_COMMENT_RUN_LOG_DERIVATION_MAX_PARALLEL_READS) {
+        const batch = runs.slice(index, index + ISSUE_COMMENT_RUN_LOG_DERIVATION_MAX_PARALLEL_READS);
+        const batchWithLogs = await Promise.all(batch.map(async (run) => ({
+          ...run,
+          logContent: await readRunLogText(run),
+        })));
+        runsWithLogs.push(...batchWithLogs);
+      }
+      const derivedByCommentId = deriveIssueCommentRunLogAttribution(candidates, runsWithLogs);
+      if (derivedByCommentId.size === 0) return comments;
+
+      return comments.map((comment) => {
+        const derived = derivedByCommentId.get(comment.id);
+        return derived ? { ...comment, ...derived } : comment;
+      });
+    } catch (err) {
+      logger.warn({ err, issueId, companyId }, "issue comment agent attribution enrichment failed; returning comments without derived attribution");
+      return comments;
     }
-    const derivedByCommentId = deriveIssueCommentRunLogAttribution(candidates, runsWithLogs);
-    if (derivedByCommentId.size === 0) return comments;
-
-    return comments.map((comment) => {
-      const derived = derivedByCommentId.get(comment.id);
-      return derived ? { ...comment, ...derived } : comment;
-    });
   }
 
   async function isTreeHoldInteractionCheckoutAllowed(
