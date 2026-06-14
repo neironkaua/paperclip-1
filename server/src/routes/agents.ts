@@ -567,21 +567,16 @@ export function agentRoutes(
       buildAgentAccessState(agent),
     ]);
 
-    let base: Record<string, unknown>;
-    if (options?.restricted) {
-      base = redactForRestrictedAgentView(agent);
-    } else if (options?.redactSecrets) {
-      // Agent-to-agent cross-read: redact every env value regardless of key name (ANT-885 Defect 1+2)
-      base = {
-        ...agent,
-        adapterConfig: redactAdapterConfig(agent.adapterConfig as Record<string, unknown> | null),
-        runtimeConfig: redactAdapterConfig(agent.runtimeConfig as Record<string, unknown> | null),
-      };
-    } else {
-      base = { ...agent };
-    }
+    const agentData = options?.redactSecrets
+      ? {
+          ...agent,
+          // Agent-to-agent cross-read: redact every env value regardless of key name (ANT-885 Defect 1+2)
+          adapterConfig: redactAdapterConfig(agent.adapterConfig as Record<string, unknown> | null),
+          runtimeConfig: redactAdapterConfig(agent.runtimeConfig as Record<string, unknown> | null),
+        }
+      : agent;
     return {
-      ...base,
+      ...(options?.restricted ? redactForRestrictedAgentView(agent) : agentData),
       chainOfCommand,
       access: accessState,
     };
