@@ -7334,7 +7334,9 @@ export function issueRoutes(
       return;
     }
     if (!scan.ok) {
-      res.status(422).json({ error: "Attachment rejected: possible secret detected", reason: scan.reason });
+      // reason kept server-side only — never echo detection-rule names to callers (oracle risk)
+      console.warn(`[attachment-secret-scan] rejected upload: ${scan.reason}`);
+      res.status(422).json({ error: "Attachment rejected: possible secret detected" });
       return;
     }
 
