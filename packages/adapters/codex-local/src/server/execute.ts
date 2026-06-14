@@ -1,7 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { inferOpenAiCompatibleBiller, runAdapterPreflightDenylist, type AdapterExecutionContext, type AdapterExecutionResult } from "@paperclipai/adapter-utils";
+import { inferOpenAiCompatibleBiller, type AdapterExecutionContext, type AdapterExecutionResult } from "@paperclipai/adapter-utils";
+import { runAdapterPreflightDenylist } from "@paperclipai/adapter-utils/preflight-denylist";
 import {
   adapterExecutionTargetIsRemote,
   adapterExecutionTargetRemoteCwd,
