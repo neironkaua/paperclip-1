@@ -772,4 +772,30 @@ describe("issue attachment secret-scan (ANT-2506)", () => {
     const { res } = await uploadFile("text/plain", "public-config.txt", Buffer.from(body, "utf8"));
     expect(res.status).toBe(201);
   });
+
+  it("rejects with 422 when the secret scanner throws (fail-secure catch path)", async () => {
+    // Applying OWASP Fail Securely lens: a scanner crash must reject the upload,
+    // never fall through to persist unscanned bytes.
+    vi.doMock("../security/attachment-secret-scan.js", () => ({
+      scanAttachmentForSecrets: () => {
+        throw new Error("scanner unavailable");
+      },
+    }));
+
+    const storage = createStorageService();
+    mockIssueService.getById.mockResolvedValue({
+      id: ISSUE_ID,
+      companyId: "company-1",
+      identifier: "PAP-1",
+    });
+
+    const app = await createApp(storage);
+    const res = await request(app)
+      .post(`/api/companies/company-1/issues/${ISSUE_ID}/attachments`)
+      .attach("file", Buffer.from("safe content"), { filename: "safe.txt", contentType: "text/plain" });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe("Attachment rejected: secret scan unavailable");
+    expect(storage.__calls.putFile).toBeUndefined();
+  });
 });
